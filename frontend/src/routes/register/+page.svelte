@@ -1,6 +1,8 @@
 
 <script lang="ts">
-  import { register } from "#lib/services/auth.js";
+  import { getAuthSession } from "#lib/context/auth.svelte.js";
+
+const authSession = getAuthSession();
 
   type Currency = "RON" | "EUR" | "USD";
 
@@ -59,12 +61,12 @@
     loading = true;
 
     try {
-      const user = await register(
+      const user = await authSession.signUp(
         normalizedName,
         normalizedEmail,
         password,
         currency
-      );
+        );
 
       successMessage = `Contul a fost creat cu succes pentru ${user.name}!`;
 
@@ -83,6 +85,12 @@
       loading = false;
     }
   }
+
+  function handleLogout() {
+  authSession.signOut();
+  successMessage = "Te-ai deconectat cu succes.";
+  password = "";
+}   
 </script>
 
 <svelte:head>
@@ -161,6 +169,29 @@
           {successMessage}
         </div>
       {/if}
+
+{#if authSession.state.status === "authenticated" && authSession.state.user}
+  <div class="session-panel">
+    <div>
+      <strong>Sesiune activă</strong>
+      <p>
+        Autentificat ca {authSession.state.user.name}
+      </p>
+    </div>
+
+    <button
+      type="button"
+      class="logout-button"
+      onclick={handleLogout}
+    >
+      Deconectare
+    </button>
+  </div>
+{:else if authSession.state.status === "error"}
+  <div class="message error" role="alert">
+    {authSession.state.errorMessage}
+  </div>
+{/if}
 
       <form onsubmit={handleSubmit}>
         <div class="form-group">
@@ -527,4 +558,30 @@
       padding: 24px 16px;
     }
   }
+
+  .session-panel {
+  padding: 16px;
+  margin-bottom: 20px;
+  border-radius: 10px;
+  background: #e9f8f1;
+  color: #137a50;
+}
+
+.session-panel p {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+.logout-button {
+  height: 38px;
+  margin-top: 12px;
+  background: #ffffff;
+  color: #137a50;
+  border: 1px solid #b8e5cf;
+}
+
+.logout-button:hover:not(:disabled) {
+  background: #d8f1e4;
+}
 </style>
+

@@ -29,6 +29,10 @@ function getToken(): string | null {
   return sessionStorage.getItem("budgettracker_token");
 }
 
+export function hasStoredToken(): boolean {
+  return getToken() !== null;
+}
+
 function saveToken(token: string): void {
   sessionStorage.setItem("budgettracker_token", token);
 }
@@ -101,6 +105,8 @@ export async function login(
   return data.user;
 }
 
+
+
 export async function getCurrentUser(): Promise<AuthUser> {
   const token = getToken();
 
@@ -115,15 +121,25 @@ export async function getCurrentUser(): Promise<AuthUser> {
     }
   });
 
-  if (!response.ok) {
+  if (response.status === 401) {
     clearToken();
     throw new Error("Your session has expired.");
   }
 
+  if (!response.ok) {
+    throw new Error("Unable to verify your session. Please try again.");
+  }
+
   const data = await response.json() as UserResponse;
+
+  if (!data.success || !data.user) {
+    throw new Error("Invalid session response.");
+  }
 
   return data.user;
 }
+
+
 
 export function logout(): void {
   clearToken();

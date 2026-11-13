@@ -1,13 +1,25 @@
+
 <script lang="ts">
-	import './layout.css';
-	import favicon from '#lib/assets/favicon.svg';
-	import type { LayoutProps } from './$types';
+  import "./layout.css";
+  import { onMount } from "svelte";
 
-	let { children }: LayoutProps = $props();
+  import {
+    createAuthSession,
+    setAuthSession
+  } from "#lib/context/auth.svelte.js";
+
+  let { children } = $props();
+
+  // Create an independent authentication session
+  // for this application instance.
+  const authSession = createAuthSession();
+
+  setAuthSession(authSession);
+
+  // Restore the session only in the browser.
+  onMount(() => {
+    void authSession.initialize();
+  });
 </script>
-
-<svelte:head>
-	<link rel="icon" href={favicon} />
-</svelte:head>
 
 {@render children()}

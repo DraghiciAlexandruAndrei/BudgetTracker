@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { login } from "#lib/services/auth.js";
+import { getAuthSession } from "#lib/context/auth.svelte.js";
+
+const authSession = getAuthSession();
 
   let email = $state("");
   let password = $state("");
@@ -21,7 +23,10 @@
     loading = true;
 
     try {
-      const user = await login(email.trim(), password);
+      const user = await authSession.signIn(
+        email.trim(), 
+        password
+      );
 
       successMessage = `Bun venit, ${user.name}! Autentificarea a reușit.`;
       password = "";
@@ -34,6 +39,12 @@
       loading = false;
     }
   }
+  function handleLogout() {
+  authSession.signOut();
+
+  successMessage = "Te-ai deconectat cu succes.";
+  password = "";
+}
 </script>
 
 <svelte:head>
@@ -107,6 +118,24 @@
           {successMessage}
         </div>
       {/if}
+
+{#if authSession.state.status === "authenticated" && authSession.state.user}
+  <div class="session-panel">
+    <div>
+      <strong>Sesiune activă</strong>
+      <p>Autentificat ca {authSession.state.user.name}</p>
+      <p>{authSession.state.user.email}</p>
+    </div>
+
+    <button
+      type="button"
+      class="logout-button"
+      onclick={handleLogout}
+    >
+      Deconectare
+    </button>
+  </div>
+{/if}
 
       <form onsubmit={handleSubmit}>
         <div class="form-group">
@@ -427,4 +456,28 @@
       padding: 25px 16px;
     }
   }
+  .session-panel {
+  padding: 16px;
+  margin-bottom: 20px;
+  border-radius: 10px;
+  background: #e9f8f1;
+  color: #137a50;
+}
+
+.session-panel p {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+.logout-button {
+  height: 38px;
+  margin-top: 12px;
+  background: #ffffff;
+  color: #137a50;
+  border: 1px solid #b8e5cf;
+}
+
+.logout-button:hover:not(:disabled) {
+  background: #d8f1e4;
+}
 </style>
