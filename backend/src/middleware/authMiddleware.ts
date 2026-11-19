@@ -1,4 +1,4 @@
-
+// Authentication middleware  
 import type { RequestHandler } from "express";
 
 import { verifyAccessToken } from "../utils/jwt.js";

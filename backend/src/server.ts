@@ -6,7 +6,7 @@ import express from "express";
 import helmet from "helmet";
 import mongoose from "mongoose";
 import authRoutes from "./routes/authRoutes.js";
-
+import transactionRoutes from "./routes/transactionRoutes.js";
 
 import { connectDatabase } from "./config/database.js";
 
@@ -14,7 +14,7 @@ const app = express();
 // Load environment variables from .env file
 const PORT = Number(process.env.PORT ?? 5000);
 const CLIENT_URL =
-  process.env.CLIENT_URL ?? "http://localhost:5173";
+  process.env.CLIENT_URL ?? "http://localhost:5183";
 
 // Security and middleware configuration
 app.use(helmet());
@@ -23,6 +23,10 @@ app.use(express.json());
 
 // Authentication routes
 app.use("/api/auth", authRoutes);
+// Transaction routes
+app.use("/api/transactions", transactionRoutes);
+
+
 // API health check
 app.get("/api/health", (_request, response) => {
   response.status(200).json({
