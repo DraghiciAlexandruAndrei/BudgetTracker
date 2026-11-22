@@ -53,6 +53,49 @@ function parseTransactionDate(value: unknown): Date | null {
   return date;
 }
 
+
+/**
+ * Safely reads a query parameter.
+ */
+function getQueryString(
+  value: unknown
+): string | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+
+  return normalizedValue.length > 0
+    ? normalizedValue
+    : undefined;
+}
+
+/**
+ * Parses and validates a date in YYYY-MM-DD format.
+ */
+function parseDateOnly(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== value
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+
 function getAuthenticatedUserId(
   request: Parameters<RequestHandler>[0]
 ): string | null {
@@ -163,8 +206,12 @@ export const createTransaction: RequestHandler = async (
   }
 };
 
+
+
+
 /**
- * Get all transactions belonging to the authenticated user.
+ * Get transactions belonging to the authenticated user.
+ * Supports filtering by type, category and date range.
  * GET /api/transactions
  */
 export const getTransactions: RequestHandler = async (
@@ -181,19 +228,154 @@ export const getTransactions: RequestHandler = async (
     return;
   }
 
-  try {
-    const transactions = await TransactionModel.find({
-      userId
-    }).sort({
-      date: -1,
-      createdAt: -1
-    });
+  // Read query parameters
+  const typeQuery = getQueryString(request.query.type);
+  const categoryQuery = getQueryString(request.query.category);
+  const startDateQuery = getQueryString(request.query.startDate);
+  const endDateQuery = getQueryString(request.query.endDate);
 
-    response.status(200).json({
-      success: true,
-      count: transactions.length,
-      transactions
+  // Validate query parameter types
+  if (
+    typeQuery === null ||
+    categoryQuery === null ||
+    startDateQuery === null ||
+    endDateQuery === null
+  ) {
+    response.status(400).json({
+      success: false,
+      message: "Invalid query parameters."
     });
+    return;
+  }
+
+  // Validate transaction type
+  if (
+    typeQuery !== undefined &&
+    !isTransactionType(typeQuery)
+  ) {
+    response.status(400).json({
+      success: false,
+      message: "Type must be income or expense."
+    });
+    return;
+  }
+
+  // Validate category
+  if (
+    categoryQuery !== undefined &&
+    (
+      categoryQuery.length < 2 ||
+      categoryQuery.length > 50
+    )
+  ) {
+    response.status(400).json({
+      success: false,
+      message: "Category must contain between 2 and 50 characters."
+    });
+    return;
+  }
+
+  // Parse date filters
+  const startDate = startDateQuery
+    ? parseDateOnly(startDateQuery)
+    : undefined;
+
+  const endDate = endDateQuery
+    ? parseDateOnly(endDateQuery)
+    : undefined;
+
+  // Validate date formats
+  if (
+    (startDateQuery !== undefined && !startDate) ||
+    (endDateQuery !== undefined && !endDate)
+  ) {
+    response.status(400).json({
+      success: false,
+      message: "Dates must use the YYYY-MM-DD format and be valid calendar dates."
+    });
+    return;
+  }
+
+  // Validate date range
+  if (
+    startDate &&
+    endDate &&
+    startDate.getTime() > endDate.getTime()
+  ) {
+    response.status(400).json({
+      success: false,
+      message: "Start date cannot be later than end date."
+    });
+    return;
+  }
+
+  try {
+    
+// Build a strongly typed MongoDB filter
+const transactionFilter: {
+  userId: Types.ObjectId;
+  type?: TransactionType;
+  category?: string;
+  date?: {
+    $gte?: Date;
+    $lt?: Date;
+  };
+} = {
+  userId: new Types.ObjectId(userId)
+};
+
+// Filter by transaction type
+if (typeQuery !== undefined) {
+  transactionFilter.type = typeQuery;
+}
+
+// Filter by category
+if (categoryQuery !== undefined) {
+  transactionFilter.category = categoryQuery;
+}
+
+// Filter by date range
+if (startDate || endDate) {
+  transactionFilter.date = {};
+
+  if (startDate) {
+    transactionFilter.date.$gte = startDate;
+  }
+
+  if (endDate) {
+    const endDateExclusive = new Date(endDate);
+
+    endDateExclusive.setUTCDate(
+      endDateExclusive.getUTCDate() + 1
+    );
+
+    transactionFilter.date.$lt = endDateExclusive;
+  }
+}
+
+// Execute query
+const transactions = await TransactionModel.find(
+  transactionFilter
+)
+  .sort({
+    date: -1,
+    createdAt: -1
+  })
+  .exec();
+
+  // Send the response
+response.status(200).json({
+  success: true,
+  count: transactions.length,
+  filters: {
+    type: typeQuery ?? null,
+    category: categoryQuery ?? null,
+    startDate: startDateQuery ?? null,
+    endDate: endDateQuery ?? null
+  },
+  transactions
+});
+
   } catch (error) {
     console.error("Get transactions error:", error);
 
@@ -203,6 +385,7 @@ export const getTransactions: RequestHandler = async (
     });
   }
 };
+
 
 /**
  * Get a single transaction belonging to the authenticated user.
@@ -224,19 +407,20 @@ export const getTransactionById: RequestHandler = async (
   }
 
   if (
-  typeof transactionId !== "string" ||
-  !Types.ObjectId.isValid(transactionId)
-) {
-  response.status(400).json({
-    success: false,
-    message: "Invalid transaction ID."
-  });
-  return;
-}
+    typeof transactionId !== "string" ||
+    !Types.ObjectId.isValid(transactionId)
+  ) {
+    response.status(400).json({
+      success: false,
+      message: "Invalid transaction ID."
+    });
+    return;
+  }
+
   try {
     const transaction = await TransactionModel.findOne({
-      _id: transactionId,
-      userId
+      _id: new Types.ObjectId(transactionId),
+      userId: new Types.ObjectId(userId)
     });
 
     if (!transaction) {
@@ -260,6 +444,7 @@ export const getTransactionById: RequestHandler = async (
     });
   }
 };
+
 
 /**
  * Update a transaction belonging to the authenticated user.
