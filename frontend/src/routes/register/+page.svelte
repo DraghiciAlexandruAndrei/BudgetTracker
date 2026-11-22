@@ -1,7 +1,7 @@
 
 <script lang="ts">
-  import { getAuthSession } from "#lib/context/auth.svelte.js";
-
+import { getAuthSession } from "#lib/context/auth.svelte.js";
+import { goto } from "$app/navigation";
 const authSession = getAuthSession();
 
   type Currency = "RON" | "EUR" | "USD";
@@ -67,7 +67,7 @@ const authSession = getAuthSession();
         password,
         currency
         );
-
+      await goto("/dashboard");
       successMessage = `Contul a fost creat cu succes pentru ${user.name}!`;
 
       name = "";

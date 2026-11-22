@@ -1,6 +1,6 @@
 <script lang="ts">
 import { getAuthSession } from "#lib/context/auth.svelte.js";
-
+import { goto } from "$app/navigation";
 const authSession = getAuthSession();
 
   let email = $state("");
@@ -30,6 +30,8 @@ const authSession = getAuthSession();
 
       successMessage = `Bun venit, ${user.name}! Autentificarea a reușit.`;
       password = "";
+      await goto("/dashboard");
+      
     } catch (error) {
       errorMessage =
         error instanceof Error
