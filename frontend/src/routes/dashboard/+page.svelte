@@ -5,14 +5,48 @@
 
   import AppLayout from "#lib/components/AppLayout.svelte";
   import { getAuthSession } from "#lib/context/auth.svelte.js";
+  import {
+    getTransactions,
+    type Transaction
+  } from "#lib/services/transactions.js";
+
   import "#lib/styles/dashboard.css";
 
   const authSession = getAuthSession();
 
   let isChecking = $state(true);
+  let isLoadingDashboard = $state(true);
   let sessionError = $state("");
+  let dashboardError = $state("");
+
+  let transactions = $state<Transaction[]>([]);
 
   const user = $derived(authSession.state.user);
+  const currency = $derived(user?.currency ?? "RON");
+
+  const totalIncome = $derived(
+    transactions
+      .filter((item) => item.type === "income")
+      .reduce((sum, item) => sum + item.amount, 0)
+  );
+
+  const totalExpenses = $derived(
+    transactions
+      .filter((item) => item.type === "expense")
+      .reduce((sum, item) => sum + item.amount, 0)
+  );
+
+  const balance = $derived(totalIncome - totalExpenses);
+
+  const recentTransactions = $derived(
+    [...transactions]
+      .sort(
+        (a, b) =>
+          new Date(b.date).getTime() -
+          new Date(a.date).getTime()
+      )
+      .slice(0, 5)
+  );
 
   onMount(async () => {
     await authSession.initialize();
@@ -26,14 +60,62 @@
       sessionError =
         authSession.state.errorMessage ??
         "Nu am putut verifica sesiunea.";
+
+      isChecking = false;
+      return;
+    }
+
+    if (authSession.state.status === "authenticated") {
+      await loadDashboardData();
     }
 
     isChecking = false;
   });
 
+  async function loadDashboardData() {
+    isLoadingDashboard = true;
+    dashboardError = "";
+
+    try {
+      transactions = await getTransactions();
+    } catch (error) {
+      transactions = [];
+
+      dashboardError =
+        error instanceof Error
+          ? error.message
+          : "Nu am putut încărca datele financiare.";
+    } finally {
+      isLoadingDashboard = false;
+    }
+  }
+
   async function handleLogout() {
     authSession.signOut();
     await goto("/login", { replace: true });
+  }
+
+  function formatCurrency(amount: number): string {
+    return new Intl.NumberFormat("ro-RO", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(amount);
+  }
+
+  function formatDate(value: string): string {
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "—";
+    }
+
+    return date.toLocaleDateString("ro-RO", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    });
   }
 </script>
 
@@ -68,6 +150,7 @@
 {:else if authSession.state.status === "authenticated" && user}
   <AppLayout activePage="dashboard">
     <main class="main-content">
+
       <header class="topbar">
         <div>
           <div class="breadcrumb">
@@ -93,8 +176,8 @@
           <span class="welcome-label">BUDGETTRACKER</span>
           <h2>Bine ai venit, {user.name}!</h2>
           <p>
-            Aici vei putea urmări și gestiona toate
-            activitățile tale financiare.
+            Aici poți urmări și gestiona toate activitățile
+            tale financiare.
           </p>
         </div>
 
@@ -108,7 +191,7 @@
         </div>
 
         <span class="currency-badge">
-          Monedă: {user.currency}
+          Monedă: {currency}
         </span>
       </section>
 
@@ -119,10 +202,15 @@
             <span class="stat-icon">◈</span>
           </div>
 
-          <strong>— {user.currency}</strong>
-          <p>
-            Disponibil după înregistrarea tranzacțiilor
-          </p>
+          <strong>
+            {#if isLoadingDashboard || dashboardError}
+              —
+            {:else}
+              {formatCurrency(balance)}
+            {/if}
+          </strong>
+
+          <p>Venituri minus cheltuieli</p>
         </article>
 
         <article class="stat-card">
@@ -131,8 +219,15 @@
             <span class="stat-icon income-icon">↙</span>
           </div>
 
-          <strong>— {user.currency}</strong>
-          <p>Veniturile tale vor apărea aici</p>
+          <strong>
+            {#if isLoadingDashboard || dashboardError}
+              —
+            {:else}
+              {formatCurrency(totalIncome)}
+            {/if}
+          </strong>
+
+          <p>Venituri înregistrate</p>
         </article>
 
         <article class="stat-card">
@@ -141,8 +236,15 @@
             <span class="stat-icon expense-icon">↗</span>
           </div>
 
-          <strong>— {user.currency}</strong>
-          <p>Cheltuielile tale vor apărea aici</p>
+          <strong>
+            {#if isLoadingDashboard || dashboardError}
+              —
+            {:else}
+              {formatCurrency(totalExpenses)}
+            {/if}
+          </strong>
+
+          <p>Cheltuieli înregistrate</p>
         </article>
       </section>
 
@@ -158,21 +260,82 @@
           </a>
         </div>
 
-        <div class="empty-state">
-          <div class="empty-icon">⇄</div>
+        {#if isLoadingDashboard}
+          <div class="empty-state">
+            <div class="loader"></div>
+            <p>Se încarcă tranzacțiile...</p>
+          </div>
 
-          <h3>Consultă istoricul tranzacțiilor</h3>
+        {:else if dashboardError}
+          <div class="empty-state dashboard-error">
+            <h3>Nu am putut încărca datele</h3>
+            <p>{dashboardError}</p>
 
-          <p>
-            Accesează pagina de tranzacții pentru a vedea
-            veniturile și cheltuielile înregistrate.
-          </p>
-        </div>
+            <button
+              class="dashboard-retry-button"
+              onclick={loadDashboardData}
+            >
+              Încearcă din nou
+            </button>
+          </div>
+
+        {:else if recentTransactions.length === 0}
+          <div class="empty-state">
+            <div class="empty-icon">⇄</div>
+            <h3>Nu există tranzacții</h3>
+
+            <p>
+              Adaugă prima tranzacție pentru a vedea aici
+              activitatea ta financiară.
+            </p>
+
+            <a href="/transactions" class="view-all-link">
+              Adaugă tranzacție
+            </a>
+          </div>
+
+        {:else}
+          <div class="recent-transactions-list">
+            {#each recentTransactions as transaction (transaction._id)}
+              <article class="recent-transaction-item">
+
+                <div
+                  class="recent-transaction-icon"
+                  class:income-transaction={transaction.type === "income"}
+                  class:expense-transaction={transaction.type === "expense"}
+                >
+                  {transaction.type === "income" ? "↙" : "↗"}
+                </div>
+
+                <div class="recent-transaction-details">
+                  <strong>{transaction.category}</strong>
+                  <span>
+                    {transaction.note || (transaction.type === "income"
+                      ? "Venit"
+                      : "Cheltuială")}
+                  </span>
+                  <small>{formatDate(transaction.date)}</small>
+                </div>
+
+                <strong
+                  class="recent-transaction-amount"
+                  class:income-amount={transaction.type === "income"}
+                  class:expense-amount={transaction.type === "expense"}
+                >
+                  {transaction.type === "income" ? "+" : "-"}
+                  {formatCurrency(transaction.amount)}
+                </strong>
+
+              </article>
+            {/each}
+          </div>
+        {/if}
       </section>
 
       <footer class="dashboard-footer">
         © 2026 BudgetTracker. Toate drepturile rezervate.
       </footer>
+
     </main>
   </AppLayout>
 {/if}
